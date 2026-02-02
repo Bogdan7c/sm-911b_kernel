@@ -33,32 +33,46 @@ jobs:
           # Мы убрали проблемный lib32ncurses5-dev и заменили его на универсальный libncurses-dev
           sudo apt-get install -y libc6-dev-i386 libncurses-dev lib32z1-dev
 
-# 4. Скачивание Toolchain (Clang + NDK) - Исправленная версия
+# 4. Скачивание Toolchain (Clang + NDK) - Fix "Missing NDK"
       - name: Setup Toolchain
         run: |
-          # --- 1. CLANG ---
+          echo "--- Setting up CLANG ---"
           mkdir -p kernel_platform/prebuilts/clang/host/linux-x86
-          echo "Cloning Clang r487747c..."
           git clone --depth=1 https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r487747c.git kernel_platform/prebuilts/clang/host/linux-x86/clang-r487747c
 
-          # --- 2. NDK (Критическое исправление) ---
-          echo "Setting up NDK..."
-          cd kernel_platform/prebuilts
-          
-          # Качаем NDK r25c (стандарт для Kernel 5.15)
+          echo "--- Setting up NDK ---"
+          # 1. Качаем NDK во временное место
           wget -q https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
           unzip -q android-ndk-r25c-linux.zip
           rm android-ndk-r25c-linux.zip
+
+          # 2. Определяем АБСОЛЮТНЫЙ путь к корню, чтобы ссылки не ломались
+          ROOT_DIR=$(pwd)
+          NDK_SOURCE="$ROOT_DIR/android-ndk-r25c"
+
+          # 3. Создаем ссылки ВО ВСЕХ возможных местах поиска
+          # Место 1: kernel_platform/prebuilts/ndk (Стандарт Samsung)
+          mkdir -p kernel_platform/prebuilts
+          ln -sfn "$NDK_SOURCE" kernel_platform/prebuilts/ndk
+
+          # Место 2: kernel_platform/common/prebuilts/ndk (Для GKI скриптов Google)
+          # Скрипт build.sh часто запускается из папки common и ищет prebuilts рядом
+          mkdir -p kernel_platform/common/prebuilts
+          ln -sfn "$NDK_SOURCE" kernel_platform/common/prebuilts/ndk
+
+          # Место 3: prebuilts/ndk (В корне репо, на всякий случай)
+          mkdir -p prebuilts
+          ln -sfn "$NDK_SOURCE" prebuilts/ndk
+
+          # 4. Проверка (чтобы мы видели, что ссылки работают)
+          echo "Checking symlinks:"
+          ls -ld kernel_platform/prebuilts/ndk
+          ls -ld kernel_platform/common/prebuilts/ndk
+          ls -ld prebuilts/ndk
           
-          # Samsung скрипты могут искать 'ndk' ИЛИ 'ndk-r25'. Создаем оба варианта.
-          mv android-ndk-r25c ndk
-          ln -s ndk ndk-r25
-          
-          # --- 3. ОТЛАДКА (Покажет в логах, что внутри) ---
-          echo "Checking prebuilts folder content:"
-          ls -F
-          echo "Checking NDK content:"
-          ls -F ndk/
+          # Проверка содержимого (должен показать README.md внутри NDK)
+          echo "Content check inside common link:"
+          ls kernel_platform/common/prebuilts/ndk | head -n 5
           
           # Возвращаемся в корень
           cd ../..
