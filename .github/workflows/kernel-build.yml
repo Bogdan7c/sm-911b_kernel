@@ -1,10 +1,10 @@
-name: Build SM-911B Kernel (S23)
+name: SM-911B Kernel Build
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
     inputs:
       build_target:
@@ -26,30 +26,17 @@ on:
         default: 'kalama'
 
 jobs:
-  build-kernel:
+  build:
     runs-on: ubuntu-22.04
     timeout-minutes: 120
-    
-    steps:
-      # 1. Очистка диска
-      - name: Free Disk Space
-        uses: jlumbroso/free-disk-space@v1.3.1
-        with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          swap-storage: false
-          docker-images: false
 
-      # 2. Скачивание кода
-      - name: Checkout Source
+    steps:
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
           submodules: 'recursive'
-      # 3. Установка зависимостей
-      - name: Install Dependencies
+
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -58,126 +45,27 @@ jobs:
             libncurses-dev libelf-dev liblz4-tool \
             wget curl unzip zip ccache ninja-build \
             libxml2-utils rsync
-          
           ccache --max-size=10G
-          echo "CCACHE_DIR=${{ github.workspace }}/.ccache" >> $GITHUB_ENV
 
-      # 4. Настройка Clang toolchain
-      - name: Setup Clang Toolchain
+      - name: Fix script paths
         run: |
-          echo "=== Setting up CLANG r487747c ==="
-          mkdir -p kernel_platform/prebuilts/clang/host/linux-x86
-          cd kernel_platform/prebuilts/clang/host/linux-x86
-          git clone --depth=1 https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r487747c.git clang-r487747c
-          
-          echo "CLANG_PATH=${{ github.workspace }}/kernel_platform/prebuilts/clang/host/linux-x86/clang-r487747c" >> $GITHUB_ENV
-          echo "PATH=${{ github.workspace }}/kernel_platform/prebuilts/clang/host/linux-x86/clang-r487747c/bin:$PATH" >> $GITHUB_ENV
-          clang --version
+          sed -i 's|./kernel_platform/build/android/prepare_vendor.sh|./kernel_platform/build/kernel/android/prepare_vendor.sh|g' build_kernel_GKI.sh
+          chmod +x build_kernel_GKI.sh setup_env.sh
+          chmod +x kernel_platform/build/kernel/android/prepare_vendor.sh
 
-      # 5. Настройка NDK
-      - name: Setup NDK
+      - name: Build kernel
         run: |
-          echo "=== Setting up NDK r25c ==="
-          wget -q https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
-          unzip -q android-ndk-r25c-linux.zip
-          rm android-ndk-r25c-linux.zip
-          
-          NDK_PATH="${{ github.workspace }}/android-ndk-r25c"
-          mkdir -p kernel_platform/prebuilts kernel_platform/common/prebuilts prebuilts
-          ln -sfn "$NDK_PATH" kernel_platform/prebuilts/ndk
-          ln -sfn "$NDK_PATH" kernel_platform/common/prebuilts/ndk
-          ln -sfn "$NDK_PATH" prebuilts/ndk
+          ./build_kernel_GKI.sh \
+            ${{ inputs.build_target }} \
+            ${{ inputs.build_variant }} \
+            ${{ inputs.chipset }}
+        env:
+          CCACHE_DIR: ${{ github.workspace }}/.ccache
 
-      # 6. Исправление пути в скрипте
-      - name: Fix Script Paths
-        run: |
-          if grep -q "build/android/prepare_vendor.sh" build_kernel_GKI.sh; then
-            echo "Fixing path in build_kernel_GKI.sh..."
-            sed -i 's|./kernel_platform/build/android/prepare_vendor.sh|./kernel_platform/build/kernel/android/prepare_vendor.sh|g' build_kernel_GKI.sh
-          fi
-          
-          chmod +x build_kernel_GKI.sh setup_env.sh          chmod +x kernel_platform/build/kernel/android/prepare_vendor.sh
-
-      # 7. Настройка переменных окружения
-      - name: Setup Environment Variables
-        run: |
-          BUILD_TARGET="${{ github.event.inputs.build_target || 'dm1q_eur_openx' }}"
-          BUILD_VARIANT="${{ github.event.inputs.build_variant || 'user' }}"
-          CHIPSET_NAME="${{ github.event.inputs.chipset || 'kalama' }}"
-          
-          echo "BUILD_TARGET=$BUILD_TARGET" >> $GITHUB_ENV
-          echo "BUILD_VARIANT=$BUILD_VARIANT" >> $GITHUB_ENV
-          echo "CHIPSET_NAME=$CHIPSET_NAME" >> $GITHUB_ENV
-          echo "MODEL=$(echo $BUILD_TARGET | cut -d'_' -f1)" >> $GITHUB_ENV
-
-      # 8. Загрузка окружения
-      - name: Load Setup Environment
-        run: |
-          source ./setup_env.sh
-          echo "ANDROID_BUILD_TOP=$ANDROID_BUILD_TOP" >> $GITHUB_ENV
-          echo "OUT_DIR=$OUT_DIR" >> $GITHUB_ENV
-          echo "ANDROID_PRODUCT_OUT=$ANDROID_PRODUCT_OUT" >> $GITHUB_ENV
-
-      # 9. Сборка ядра
-      - name: Build Kernel
-        run: |
-          echo "=== Starting kernel build ==="
-          ./build_kernel_GKI.sh "${{ env.BUILD_TARGET }}" "${{ env.BUILD_VARIANT }}" "${{ env.CHIPSET_NAME }}"
-          echo "=== Build completed ==="
-
-      # 10. Проверка результатов
-      - name: Check Build Results
-        run: |
-          if [ -f "out/msm-kernel-${{ env.CHIPSET_NAME }}-gki/dist/Image" ]; then
-            echo "✓ Kernel Image found!"
-            ls -lh "out/msm-kernel-${{ env.CHIPSET_NAME }}-gki/dist/Image"
-          else
-            echo "✗ Kernel Image NOT found!"
-            find out -name "Image" 2>/dev/null | head -5
-            exit 1
-          fi
-          
-          echo "Modules: $(find "out/msm-kernel-${{ env.CHIPSET_NAME }}-gki/dist" -name '*.ko' 2>/dev/null | wc -l)"
-          echo "DTBs: $(find "out/msm-kernel-${{ env.CHIPSET_NAME }}-gki/dist" -name '*.dtb' 2>/dev/null | wc -l)"
-
-      # 11. Создание архива с артефактами
-      - name: Package Artifacts
-        run: |
-          ARTIFACTS_DIR="${{ github.workspace }}/kernel-artifacts"
-          mkdir -p "$ARTIFACTS_DIR"
-                    cp "out/msm-kernel-${{ env.CHIPSET_NAME }}-gki/dist/Image" "$ARTIFACTS_DIR/"
-          mkdir -p "$ARTIFACTS_DIR/modules"
-          find "out/msm-kernel-${{ env.CHIPSET_NAME }}-gki/dist" -name "*.ko" -exec cp {} "$ARTIFACTS_DIR/modules/" \;
-          
-          cp "out/msm-kernel-${{ env.CHIPSET_NAME }}-gki/dist/.config" "$ARTIFACTS_DIR/"
-          
-          cat > "$ARTIFACTS_DIR/BUILD_INFO.txt" <<EOF
-Device: Samsung Galaxy S23 (SM-911B)
-Model: ${{ env.MODEL }}
-Build Target: ${{ env.BUILD_TARGET }}
-Build Variant: ${{ env.BUILD_VARIANT }}
-Chipset: ${{ env.CHIPSET_NAME }}
-Build Date: $(date)
-GitHub SHA: ${{ github.sha }}
-EOF
-
-      # 12. Загрузка артефактов
-      - name: Upload Artifacts
+      - name: Upload artifacts
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: sm911b-kernel-${{ env.BUILD_TARGET }}-${{ github.sha }}
-          path: ${{ github.workspace }}/kernel-artifacts
+          name: sm911b-kernel-${{ github.sha }}
+          path: out/msm-kernel-${{ inputs.chipset }}-gki/dist/
           retention-days: 30
-
-      # 13. Создание релиза (опционально)
-      - name: Create Release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            ${{ github.workspace }}/kernel-artifacts/Image
-            ${{ github.workspace }}/kernel-artifacts/BUILD_INFO.txt
-          tag_name: v${{ github.run_number }}
-          name: SM-911B Kernel Build #${{ github.run_number }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
