@@ -33,13 +33,18 @@ jobs:
           # Мы убрали проблемный lib32ncurses5-dev и заменили его на универсальный libncurses-dev
           sudo apt-get install -y libc6-dev-i386 libncurses-dev lib32z1-dev
 
-      # 4. Скачивание компилятора (Clang)
+# 4. Скачивание компилятора (Clang) - Исправленная ссылка
       - name: Setup Toolchain
         run: |
           mkdir -p kernel_platform/prebuilts/clang/host/linux-x86
           cd kernel_platform/prebuilts/clang/host/linux-x86
-          # Качаем Clang r487747c
-          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz
+          
+          # Мы используем прямую ссылку на архив версии r487747c
+          # Если 'main' не работает, 'master' обычно является стандартом для старых репозиториев AOSP
+          echo "Downloading Clang r487747c..."
+          wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r487747c.tar.gz || \
+          wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz
+          
           mkdir clang-r487747c
           tar -xf clang-r487747c.tar.gz -C clang-r487747c
           rm clang-r487747c.tar.gz
