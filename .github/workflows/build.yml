@@ -33,19 +33,27 @@ jobs:
           # Мы убрали проблемный lib32ncurses5-dev и заменили его на универсальный libncurses-dev
           sudo apt-get install -y libc6-dev-i386 libncurses-dev lib32z1-dev
 
-# 4. Скачивание компилятора (Clang) - Метод Git Clone (Надежный)
+# 4. Скачивание Toolchain (Clang + NDK)
       - name: Setup Toolchain
         run: |
-          # Создаем папку, куда будем клонировать
+          # --- 1. CLANG ---
           mkdir -p kernel_platform/prebuilts/clang/host/linux-x86
-          
-          # Используем зеркало crDroid (это точная копия официального r487747c)
-          # --depth=1 означает, что мы качаем без истории (быстро, ~400МБ)
           echo "Cloning Clang r487747c..."
+          # Используем git clone (надежный метод)
           git clone --depth=1 https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r487747c.git kernel_platform/prebuilts/clang/host/linux-x86/clang-r487747c
+
+          # --- 2. NDK (Исправление ошибки) ---
+          echo "Downloading NDK r25c..."
+          cd kernel_platform/prebuilts
+          # Качаем NDK с официального сайта Google
+          wget -q https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
+          unzip -q android-ndk-r25c-linux.zip
+          rm android-ndk-r25c-linux.zip
+          # Переименовываем папку так, как хочет скрипт (просто "ndk")
+          mv android-ndk-r25c ndk
           
-          # Проверяем, что всё скачалось (для логов)
-          ls -la kernel_platform/prebuilts/clang/host/linux-x86/clang-r487747c/bin/clang
+          # Проверка
+          ls -d ndk
 
       # 5. Сборка (Используем твой setup_env.sh)
       - name: Build Kernel
