@@ -53,6 +53,33 @@ jobs:
           chmod +x build_kernel_GKI.sh setup_env.sh
           chmod +x kernel_platform/build/kernel/android/prepare_vendor.sh
 
+      # КРИТИЧЕСКИ ВАЖНЫЙ ШАГ - ПРАВИЛЬНАЯ УСТАНОВКА NDK
+      - name: Setup NDK (Correct Path)
+        run: |
+          echo "=== Setting up NDK r25c ==="
+          wget -q https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
+          unzip -q android-ndk-r25c-linux.zip
+          rm android-ndk-r25c-linux.zip
+          
+          # Создаем НУЖНУЮ структуру
+          mkdir -p prebuilts/ndk
+          cp -r android-ndk-r25c/* prebuilts/ndk/
+          
+          # Проверяем установку
+          ls -la prebuilts/ndk
+          echo "NDK installed successfully!"
+
+      - name: Setup Clang Toolchain
+        run: |
+          echo "=== Setting up CLANG r487747c ==="
+          mkdir -p kernel_platform/prebuilts/clang/host/linux-x86
+          cd kernel_platform/prebuilts/clang/host/linux-x86
+          git clone --depth=1 https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r487747c.git clang-r487747c
+          
+          echo "CLANG_PATH=${{ github.workspace }}/kernel_platform/prebuilts/clang/host/linux-x86/clang-r487747c" >> $GITHUB_ENV
+          echo "PATH=${{ github.workspace }}/kernel_platform/prebuilts/clang/host/linux-x86/clang-r487747c/bin:$PATH" >> $GITHUB_ENV
+          clang --version
+
       - name: Build kernel
         run: |
           ./build_kernel_GKI.sh \
